@@ -9,6 +9,23 @@ type MultipartFile = {
   data: Buffer;
 };
 
+function getProviderErrorMessage(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!value || typeof value !== "object") return undefined;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["message", "error", "detail"]) {
+    const message = getProviderErrorMessage(record[key]);
+    if (message) return message;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
 function getBoundary(contentType: string): string | null {
   const match = contentType.match(/boundary="?([^";]+)"?/i);
   return match?.[1] ?? null;
@@ -92,17 +109,20 @@ router.post("/transcribe", async (req, res) => {
     const data = (await response.json()) as {
       transcript?: string;
       language_code?: string | null;
-      error?: string;
-      message?: string;
+      error?: unknown;
+      message?: unknown;
     };
 
     if (!response.ok) {
+      const providerMessage =
+        getProviderErrorMessage(data.message) ??
+        getProviderErrorMessage(data.error);
       req.log.error(
-        { statusCode: response.status, providerMessage: data.message },
+        { statusCode: response.status, providerMessage },
         "Sarvam transcription failed",
       );
       res.status(502).json({
-        error: data.message || data.error || "Sarvam transcription failed",
+        error: providerMessage || "Sarvam transcription failed",
       });
       return;
     }

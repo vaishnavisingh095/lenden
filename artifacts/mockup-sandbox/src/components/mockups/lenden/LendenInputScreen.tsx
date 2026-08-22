@@ -5,6 +5,7 @@ type ScreenState =
   | "ready"
   | "typing"
   | "listening"
+  | "paused"
   | "processing"
   | "result"
   | "review";
@@ -18,13 +19,13 @@ export function LendenInputScreen() {
   const chunksRef = useRef<Blob[]>([]);
 
   const startListening = async () => {
-    if (screen === "listening" || screen === "processing") return;
+    if (screen === "listening" || screen === "paused" || screen === "processing") return;
 
     setErrorMessage("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
         : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
           ? "audio/webm;codecs=opus"
           : "";
@@ -39,8 +40,13 @@ export function LendenInputScreen() {
       });
       recorder.addEventListener("stop", () => {
         stream.getTracks().forEach((track) => track.stop());
-        void transcribe(new Blob(chunksRef.current, { type: recorder.mimeType }));
-      });
+
+        const audio = new Blob(chunksRef.current, {
+          type: "audio/webm",
+        });
+
+  void transcribe(audio);
+});
       recorder.start();
       setScreen("listening");
     } catch {
@@ -49,15 +55,29 @@ export function LendenInputScreen() {
     }
   };
 
+  const toggleListening = () => {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+
+    if (recorder.state === "recording") {
+      recorder.pause();
+      setScreen("paused");
+    } else if (recorder.state === "paused") {
+      recorder.resume();
+      setScreen("listening");
+    }
+  };
+
   const stopListening = () => {
-    if (recorderRef.current?.state === "recording") {
+    const recorder = recorderRef.current;
+    if (recorder?.state === "recording" || recorder?.state === "paused") {
       setScreen("processing");
-      recorderRef.current.stop();
+      recorder.stop();
     }
   };
 
   const transcribe = async (audio: Blob) => {
-    const extension = audio.type.includes("mp4") ? "m4a" : "webm";
+    const extension = audio.type.split("/", 2)[1]?.split(";", 1)[0] || "webm";
     const form = new FormData();
     form.append("file", audio, `lenden-recording.${extension}`);
 
@@ -68,9 +88,17 @@ export function LendenInputScreen() {
       });
       const data = (await response.json()) as {
         transcript?: string;
-        error?: string;
+        error?: unknown;
       };
-      if (!response.ok) throw new Error(data.error || "Transcription failed");
+      if (!response.ok) {
+        const message =
+          typeof data.error === "string"
+            ? data.error
+            : data.error && typeof data.error === "object"
+              ? JSON.stringify(data.error)
+              : "Transcription failed";
+        throw new Error(message);
+      }
       setTranscript(data.transcript || "No speech was detected.");
       setScreen("result");
     } catch (error) {
@@ -88,7 +116,8 @@ export function LendenInputScreen() {
     setScreen("ready");
   };
 
-  const isWorking = screen === "listening" || screen === "processing";
+  const isWorking =
+    screen === "listening" || screen === "paused" || screen === "processing";
 
   return (
     <main className="min-h-screen bg-[#f8f8f5] px-5 py-6 text-[#173b35] sm:px-8">
@@ -224,12 +253,20 @@ export function LendenInputScreen() {
             <section className="flex flex-1 flex-col items-center justify-center pb-5">
               <button
                 type="button"
-                onClick={startListening}
+                onClick={screen === "ready" ? startListening : toggleListening}
                 disabled={screen === "processing"}
                 className={`group relative flex h-[154px] w-[154px] items-center justify-center rounded-full bg-[#174f45] text-white shadow-[0_18px_38px_rgba(23,79,69,0.24)] transition ${
                   isWorking ? "scale-105" : "hover:scale-[1.03] active:scale-[0.98]"
                 }`}
-                aria-label={isWorking ? "Listening" : "Tap to speak"}
+                aria-label={
+                  screen === "paused"
+                    ? "Resume recording"
+                    : screen === "listening"
+                      ? "Pause recording"
+                      : isWorking
+                        ? "Processing"
+                        : "Tap to speak"
+                }
               >
                 {isWorking && (
                   <>
@@ -246,11 +283,13 @@ export function LendenInputScreen() {
               <p className="mt-7 text-lg font-bold">
                 {screen === "listening"
                   ? "Listening..."
+                  : screen === "paused"
+                    ? "Paused"
                   : screen === "processing"
                     ? "Processing..."
                     : "Tap to speak"}
               </p>
-              {screen === "listening" && (
+              {(screen === "listening" || screen === "paused") && (
                 <button
                   type="button"
                   onClick={stopListening}

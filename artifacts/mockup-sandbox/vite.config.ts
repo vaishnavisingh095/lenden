@@ -56,8 +56,14 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port,
-    host: "0.0.0.0",
+  port,
+  host: "0.0.0.0",
+  proxy: {
+    "/api": {
+      target: "http://localhost:3000",
+      changeOrigin: true,
+    },
+  },
     allowedHosts: true,
     fs: {
       strict: true,
