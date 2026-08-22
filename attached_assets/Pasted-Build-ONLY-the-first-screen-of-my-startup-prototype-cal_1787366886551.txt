@@ -1,0 +1,93 @@
+Build ONLY the first screen of my startup prototype called "Lenden".
+
+Lenden is a voice-first business memory and payment-collection assistant for traditional Indian B2B business owners. The user should be able to quickly tell Lenden what happened with a customer, without filling complicated forms.
+
+IMPORTANT:
+This is ONLY the input screen for now.
+Do NOT build:
+- database
+- authentication
+- WhatsApp integration
+- reminders
+- dashboards
+- analytics
+- payment processing
+- collection prioritization
+- customer profiles
+- backend
+- AI extraction
+- Sarvam integration
+
+We will build those later.
+
+DESIGN GOAL:
+The user is a busy business owner who may not be comfortable with complicated apps. The screen must feel simpler than Khatabook, Excel, or a traditional CRM.
+
+Make it:
+- extremely simple
+- mobile-first
+- clean
+- professional
+- trustworthy
+- easy for an older business owner to understand
+- large buttons and readable text
+- minimal text
+- no unnecessary animations
+- no complicated navigation
+
+SCREEN:
+
+Top:
+LENDEN
+"Your business remembers."
+
+Main heading:
+"What happened?"
+
+Subtext:
+"Tell Lenden about a customer, payment, or follow-up."
+
+Center of the screen:
+A very large microphone button.
+
+Below the microphone:
+"Tap to speak"
+
+Under that:
+"Speak naturally in Hindi, Hinglish, or English."
+
+Add a secondary option:
+"✎ Type instead"
+
+The type option should open a simple text input where the user can type the same information.
+
+Add a small example near the bottom:
+
+Try saying:
+"Sharma ka 2 lakh baaki hai, Monday ko payment karega."
+
+IMPORTANT UX:
+The microphone must be the primary action and visually dominant.
+The user should understand the screen within 3 seconds.
+Do not make the user choose customer → amount → date manually.
+The whole idea is that they simply speak naturally.
+
+After recording, show a simple temporary state:
+"Listening..."
+then:
+"Processing..."
+
+For now, after the user finishes speaking, DO NOT actually call any API.
+Just create a mock transcript/result so we can test the UI.
+
+Use a realistic mock result:
+"Sharma ka 2 lakh baaki hai, Monday ko payment karega."
+
+Then show a button:
+"Review details"
+
+Clicking it can lead to a placeholder confirmation screen, but DO NOT build the actual database or save functionality yet.
+
+Make the entire interface responsive and optimized for a phone screen.
+
+Keep the code clean and easy to modify because we will connect Sarvam AI in the next step.
