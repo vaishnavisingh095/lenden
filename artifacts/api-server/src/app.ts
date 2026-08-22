@@ -26,6 +26,14 @@ app.use(
   }),
 );
 app.use(cors());
+app.use(
+  "/api/transcribe",
+  express.raw({
+    type: (req) =>
+      req.headers["content-type"]?.startsWith("multipart/form-data") ?? false,
+    limit: "25mb",
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

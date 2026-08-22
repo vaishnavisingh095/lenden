@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Mic, Pencil, RotateCcw } from "lucide-react";
 
 type ScreenState =
@@ -9,34 +9,82 @@ type ScreenState =
   | "result"
   | "review";
 
-const MOCK_TRANSCRIPT =
-  "Sharma ka 2 lakh baaki hai, Monday ko payment karega.";
-
 export function LendenInputScreen() {
   const [screen, setScreen] = useState<ScreenState>("ready");
   const [typedText, setTypedText] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
-  useEffect(() => {
-    if (screen !== "listening") return;
-
-    const timer = window.setTimeout(() => setScreen("processing"), 1400);
-    return () => window.clearTimeout(timer);
-  }, [screen]);
-
-  useEffect(() => {
-    if (screen !== "processing") return;
-
-    const timer = window.setTimeout(() => setScreen("result"), 1200);
-    return () => window.clearTimeout(timer);
-  }, [screen]);
-
-  const startListening = () => {
+  const startListening = async () => {
     if (screen === "listening" || screen === "processing") return;
-    setScreen("listening");
+
+    setErrorMessage("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "";
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
+      chunksRef.current = [];
+      recorderRef.current = recorder;
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      });
+      recorder.addEventListener("stop", () => {
+        stream.getTracks().forEach((track) => track.stop());
+        void transcribe(new Blob(chunksRef.current, { type: recorder.mimeType }));
+      });
+      recorder.start();
+      setScreen("listening");
+    } catch {
+      setErrorMessage("Microphone permission is needed to record.");
+      setScreen("ready");
+    }
+  };
+
+  const stopListening = () => {
+    if (recorderRef.current?.state === "recording") {
+      setScreen("processing");
+      recorderRef.current.stop();
+    }
+  };
+
+  const transcribe = async (audio: Blob) => {
+    const extension = audio.type.includes("mp4") ? "m4a" : "webm";
+    const form = new FormData();
+    form.append("file", audio, `lenden-recording.${extension}`);
+
+    try {
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await response.json()) as {
+        transcript?: string;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error || "Transcription failed");
+      setTranscript(data.transcript || "No speech was detected.");
+      setScreen("result");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Transcription failed.",
+      );
+      setScreen("ready");
+    }
   };
 
   const reset = () => {
     setTypedText("");
+    setTranscript("");
+    setErrorMessage("");
     setScreen("ready");
   };
 
@@ -111,7 +159,7 @@ export function LendenInputScreen() {
             </h1>
             <div className="mt-8 rounded-[26px] border border-[#dfe6df] bg-white p-5 shadow-[0_12px_30px_rgba(36,73,63,0.07)]">
               <p className="text-[17px] leading-8 text-[#31564d]">
-                {MOCK_TRANSCRIPT}
+                {transcript}
               </p>
               <div className="mt-5 flex items-center gap-2 border-t border-[#edf0ec] pt-4 text-sm text-[#789089]">
                 <Check size={17} className="text-[#2d8067]" />
@@ -140,7 +188,7 @@ export function LendenInputScreen() {
             </h1>
             <div className="mt-8 rounded-[26px] border border-[#dfe6df] bg-white p-5 shadow-[0_12px_30px_rgba(36,73,63,0.07)]">
               <p className="text-[17px] leading-8 text-[#31564d]">
-                {MOCK_TRANSCRIPT}
+                {transcript}
               </p>
             </div>
             <button
@@ -177,7 +225,7 @@ export function LendenInputScreen() {
               <button
                 type="button"
                 onClick={startListening}
-                disabled={isWorking}
+                disabled={screen === "processing"}
                 className={`group relative flex h-[154px] w-[154px] items-center justify-center rounded-full bg-[#174f45] text-white shadow-[0_18px_38px_rgba(23,79,69,0.24)] transition ${
                   isWorking ? "scale-105" : "hover:scale-[1.03] active:scale-[0.98]"
                 }`}
@@ -202,6 +250,15 @@ export function LendenInputScreen() {
                     ? "Processing..."
                     : "Tap to speak"}
               </p>
+              {screen === "listening" && (
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  className="mt-5 rounded-full border border-[#cadbd1] px-4 py-2 text-sm font-bold text-[#59716a]"
+                >
+                  Stop recording
+                </button>
+              )}
               <p className="mt-2 text-center text-sm text-[#82938d]">
                 Speak naturally in Hindi, Hinglish, or English.
               </p>
@@ -226,6 +283,11 @@ export function LendenInputScreen() {
                 “Sharma ka 2 lakh baaki hai, Monday ko payment karega.”
               </p>
             </section>
+            {errorMessage && (
+              <p className="mt-3 text-center text-sm font-semibold text-[#a55b45]">
+                {errorMessage}
+              </p>
+            )}
           </>
         )}
       </div>
