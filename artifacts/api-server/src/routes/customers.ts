@@ -58,11 +58,20 @@ router.post("/customers/notes", async (req, res) => {
 
   try {
     const saved = await db.transaction(async (tx) => {
+            const promiseDate = parsed.data.promise_date
+        ? new Date(parsed.data.promise_date)
+        : null;
+
+      const paymentStatus = parsed.data.amount_type ?? "outstanding";
+
       const [customer] = await tx
         .insert(customersTable)
         .values({
-          name: parsed.data.customer_name,
-          phone: parsed.data.phone ?? null,
+          customerName: parsed.data.customer_name,
+          amount: parsed.data.amount,
+          paymentStatus,
+          promiseDate,
+          notes: parsed.data.notes,
         })
         .returning();
 
@@ -70,10 +79,9 @@ router.post("/customers/notes", async (req, res) => {
         .insert(customerHistoryTable)
         .values({
           customerId: customer.id,
-          transcript: parsed.data.transcript ?? null,
           amount: parsed.data.amount,
-          amountType: parsed.data.amount_type ?? null,
-          promiseDate: parsed.data.promise_date ?? null,
+          paymentStatus,
+          promiseDate,
           notes: parsed.data.notes,
         })
         .returning();

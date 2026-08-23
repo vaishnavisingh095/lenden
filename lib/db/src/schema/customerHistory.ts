@@ -9,7 +9,7 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-import { customersTable } from "./customers";
+import { customersTable, paymentStatusEnum } from "./customers";
 
 export const customerHistoryTable = pgTable("customer_history", {
   id: serial("id").primaryKey(),
@@ -18,16 +18,16 @@ export const customerHistoryTable = pgTable("customer_history", {
     .references(() => customersTable.id)
     .notNull(),
 
-  transcript: text("transcript"),
-
   amount: numeric("amount", {
-    precision: 12,
+    precision: 14,
     scale: 2,
   }),
 
-  amountType: text("amount_type"),
+  paymentStatus: paymentStatusEnum("payment_status").notNull(),
 
-  promiseDate: text("promise_date"),
+  promiseDate: timestamp("promise_date", {
+    withTimezone: true,
+  }),
 
   notes: text("notes"),
 
