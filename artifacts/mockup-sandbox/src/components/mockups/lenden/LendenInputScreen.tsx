@@ -277,16 +277,65 @@ setScreen("result");
               className="mt-8 min-h-[170px] w-full resize-none rounded-[26px] border border-[#dfe6df] bg-white p-5 text-[17px] leading-8 text-[#31564d] outline-none shadow-[0_12px_30px_rgba(36,73,63,0.07)] placeholder:text-[#a2b1ab] focus:border-[#79a693] focus:ring-4 focus:ring-[#dceae2]"
             />
             <button
-              type="button"
-              onClick={() => {
-               setTranscript(typedText.trim());
-               setScreen("result");
-}}
-              disabled={!typedText.trim()}
-              className="mt-6 h-14 rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] transition hover:bg-[#123f38] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Continue
-            </button>
+  type="button"
+  onClick={async () => {
+    const finalTranscript = typedText.trim();
+
+    if (!finalTranscript) return;
+
+    setErrorMessage("");
+    setTranscript(finalTranscript);
+    setScreen("processing");
+
+    try {
+      const extractResponse = await fetch("/api/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transcript: finalTranscript,
+        }),
+      });
+
+      const extractData = (await extractResponse.json()) as {
+        customer_name?: string | null;
+        amount?: number | null;
+        amount_type?: "received" | "promised" | "outstanding" | null;
+        promise_date?: string | null;
+        notes?: string | null;
+        error?: string;
+      };
+
+      if (!extractResponse.ok) {
+        throw new Error(
+          extractData.error || "Could not understand payment details.",
+        );
+      }
+
+      setExtracted({
+        customer_name: extractData.customer_name ?? null,
+        amount: extractData.amount ?? null,
+        amount_type: extractData.amount_type ?? null,
+        promise_date: extractData.promise_date ?? null,
+        notes: extractData.notes ?? null,
+      });
+
+      setScreen("result");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not understand payment details.",
+      );
+      setScreen("ready");
+    }
+  }}
+  disabled={!typedText.trim()}
+  className="mt-6 h-14 rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] transition hover:bg-[#123f38] disabled:cursor-not-allowed disabled:opacity-40"
+>
+  Continue
+</button>
             <button
               type="button"
               onClick={reset}
