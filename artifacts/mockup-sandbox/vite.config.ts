@@ -60,7 +60,7 @@ export default defineConfig({
   host: "0.0.0.0",
   proxy: {
     "/api": {
-      target: "http://localhost:5000",
+      target: "https://a61d13aa-7656-49b3-93d1-297e58301890-00-2lm8zg9meficg.sisko.replit.dev",
       changeOrigin: true,
     },
   },

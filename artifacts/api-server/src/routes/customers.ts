@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, customersTable, customerHistoryTable } from "@workspace/db";
+import { db, customersTable, transactionsTable } from "@workspace/db";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -44,6 +45,7 @@ const saveCustomerNoteSchema = z.object({
   notes: z.string().trim().optional().default(""),
 });
 
+
 router.post("/customers/notes", async (req, res) => {
   const parsed = saveCustomerNoteSchema.safeParse(req.body);
 
@@ -58,37 +60,185 @@ router.post("/customers/notes", async (req, res) => {
 
   try {
     const saved = await db.transaction(async (tx) => {
-            const promiseDate = parsed.data.promise_date
-        ? new Date(parsed.data.promise_date)
-        : null;
+      const {
+        customer_name,
+        amount,
+        amount_type,
+        promise_date,
+        notes,
+      } = parsed.data;
 
-      const paymentStatus = parsed.data.amount_type ?? "outstanding";
+      const promiseDate = promise_date ? new Date(promise_date) : null;
 
-      const [customer] = await tx
-        .insert(customersTable)
-        .values({
-          customerName: parsed.data.customer_name,
-          amount: parsed.data.amount,
-          paymentStatus,
-          promiseDate,
-          notes: parsed.data.notes,
-        })
-        .returning();
+      if (promise_date && Number.isNaN(promiseDate?.getTime())) {
+        throw new Error("Invalid promise date.");
+      }
 
-      const [history] = await tx
-        .insert(customerHistoryTable)
+      /*
+       * Find the customer case-insensitively.
+       *
+       * Example:
+       * "Ramesh" and "ramesh" → same customer.
+       */
+      const existingCustomers = await tx
+        .select()
+        .from(customersTable)
+        .where(
+          sql`lower(${customersTable.customerName}) = lower(${customer_name})`,
+        )
+        .limit(1);
+
+      let customer = existingCustomers[0];
+
+      /*
+       * If this customer does not exist, create them.
+       *
+       * The old amount/paymentStatus fields are kept populated for
+       * backward compatibility with the existing database.
+       *
+       * NEW balance calculations will NOT use those fields.
+       */
+      if (!customer) {
+        const [createdCustomer] = await tx
+          .insert(customersTable)
+          .values({
+            customerName: customer_name,
+            amount,
+            paymentStatus: amount_type ?? "outstanding",
+            promiseAmount:
+              amount_type === "promised" ? amount : null,
+            promiseDate:
+              amount_type === "promised" ? promiseDate : null,
+            notes,
+          })
+          .returning();
+
+        customer = createdCustomer;
+      }
+
+      /*
+       * PROMISED:
+       *
+       * No transaction is created.
+       * A promise is NOT money received.
+       * Therefore it does NOT change the balance.
+       */
+      if (amount_type === "promised") {
+        const [updatedCustomer] = await tx
+          .update(customersTable)
+          .set({
+            promiseAmount: amount,
+            promiseDate,
+            notes,
+            updatedAt: new Date(),
+          })
+          .where(sql`${customersTable.id} = ${customer.id}`)
+          .returning();
+
+        const [balanceRow] = await tx
+          .select({
+            balance: sql<string>`
+              COALESCE(SUM(${transactionsTable.amount}), 0)
+            `,
+          })
+          .from(transactionsTable)
+          .where(
+            sql`${transactionsTable.customerId} = ${customer.id}`,
+          );
+
+        return {
+          customer: updatedCustomer,
+          transaction: null,
+          balance: Number(balanceRow?.balance ?? "0"),
+        };
+      }
+
+      /*
+       * RECEIVED:
+       * Customer actually paid us.
+       *
+       * Store the transaction amount as negative.
+       *
+       * Example:
+       * ₹2,500 received → -2500
+       */
+      if (amount_type === "received") {
+        if (amount === null) {
+          throw new Error(
+            "Amount is required when a payment is received.",
+          );
+        }
+
+        const [transaction] = await tx
+          .insert(transactionsTable)
+          .values({
+            customerId: customer.id,
+            amount: `-${amount}`,
+            type: "payment",
+            source: "voice",
+            notes,
+          })
+          .returning();
+
+        const [balanceRow] = await tx
+          .select({
+            balance: sql<string>`
+              COALESCE(SUM(${transactionsTable.amount}), 0)
+            `,
+          })
+          .from(transactionsTable)
+          .where(
+            sql`${transactionsTable.customerId} = ${customer.id}`,
+          );
+
+        return {
+          customer,
+          transaction,
+          balance: Number(balanceRow?.balance ?? "0"),
+        };
+      }
+
+      /*
+       * OUTSTANDING:
+       * Customer owes us money.
+       *
+       * Store the transaction amount as positive.
+       *
+       * Example:
+       * ₹2,500 credit purchase → +2500
+       */
+      if (amount === null) {
+        throw new Error(
+          "Amount is required when recording an outstanding amount.",
+        );
+      }
+
+      const [transaction] = await tx
+        .insert(transactionsTable)
         .values({
           customerId: customer.id,
-          amount: parsed.data.amount,
-          paymentStatus,
-          promiseDate,
-          notes: parsed.data.notes,
+          amount,
+          type: "purchase",
+          source: "voice",
+          notes,
         })
         .returning();
+
+      const [balanceRow] = await tx
+        .select({
+          balance: sql<string>`
+            COALESCE(SUM(${transactionsTable.amount}), 0)
+          `,
+        })
+        .from(transactionsTable)
+        .where(
+          sql`${transactionsTable.customerId} = ${customer.id}`,
+        );
 
       return {
         customer,
-        history,
+        transaction,
+        balance: Number(balanceRow?.balance ?? "0"),
       };
     });
 
@@ -100,9 +250,11 @@ router.post("/customers/notes", async (req, res) => {
     );
 
     res.status(500).json({
-      error: "Could not save customer note",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not save customer note",
     });
   }
 });
-
 export default router;

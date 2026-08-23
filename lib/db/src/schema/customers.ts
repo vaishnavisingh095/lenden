@@ -15,6 +15,7 @@ export const paymentStatusEnum = pgEnum("payment_status", [
   "outstanding",
 ]);
 
+
 export const customersTable = pgTable("customers", {
   id: serial("id").primaryKey(),
 
@@ -26,6 +27,11 @@ export const customersTable = pgTable("customers", {
   }),
 
   paymentStatus: paymentStatusEnum("payment_status").notNull(),
+
+  promiseAmount: numeric("promise_amount", {
+    precision: 14,
+    scale: 2,
+  }),
 
   promiseDate: timestamp("promise_date", {
     withTimezone: true,

@@ -187,79 +187,27 @@ setScreen("result");
     <main className="min-h-screen bg-[#f8f8f5] px-5 py-6 text-[#173b35] sm:px-8">
       <div className="mx-auto flex min-h-[840px] w-full max-w-[430px] flex-col">
         <header className="flex items-start justify-between">
-          {screen === "review" ? (
-            <button
-  type="button"
-  onClick={async () => {
-    const finalTranscript = typedText.trim();
-
-    if (!finalTranscript) return;
-
-    setErrorMessage("");
-    setTranscript(finalTranscript);
-    setScreen("processing");
-
-    try {
-      const extractResponse = await fetch("/api/extract", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          transcript: finalTranscript,
-        }),
-      });
-
-      const extractData = (await extractResponse.json()) as {
-        customer_name?: string | null;
-        amount?: number | null;
-        amount_type?: "received" | "promised" | "outstanding" | null;
-        promise_date?: string | null;
-        notes?: string | null;
-        error?: string;
-      };
-
-      if (!extractResponse.ok) {
-        throw new Error(
-          extractData.error || "Could not understand payment details.",
-        );
-      }
-
-      setExtracted({
-        customer_name: extractData.customer_name ?? null,
-        amount: extractData.amount ?? null,
-        amount_type: extractData.amount_type ?? null,
-        promise_date: extractData.promise_date ?? null,
-        notes: extractData.notes ?? null,
-      });
-
-      setScreen("result");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not understand payment details.",
-      );
-      setScreen("ready");
-    }
-  }}
-  disabled={!typedText.trim()}
-  className="mt-6 h-14 rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] disabled:cursor-not-allowed disabled:opacity-40"
->
-  Continue
-</button>
-          ) : (
-            <div>
-              <p className="text-[20px] font-black tracking-[0.22em] text-[#174f45]">
-                LENDEN
-              </p>
-              <p className="mt-1 text-[12px] font-medium tracking-wide text-[#789089]">
-                Your business remembers.
-              </p>
-            </div>
-          )}
-          <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#d89a42]" />
-        </header>
+  {screen === "review" ? (
+    <button
+      type="button"
+      onClick={() => setScreen("result")}
+      className="mt-1 flex items-center gap-2 text-sm font-bold text-[#59716a] hover:text-[#174f45]"
+    >
+      <ArrowLeft size={16} />
+      Back
+    </button>
+  ) : (
+    <div>
+      <p className="text-[20px] font-black tracking-[0.22em] text-[#174f45]">
+        LENDEN
+      </p>
+      <p className="mt-1 text-[12px] font-medium tracking-wide text-[#789089]">
+        Your business remembers.
+      </p>
+    </div>
+  )}
+  <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#d89a42]" />
+</header>
 
         {screen === "typing" ? (
           <section className="flex flex-1 flex-col justify-center pb-12">
