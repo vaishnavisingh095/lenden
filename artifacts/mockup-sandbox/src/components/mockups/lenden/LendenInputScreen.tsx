@@ -8,13 +8,45 @@ type ScreenState =
   | "paused"
   | "processing"
   | "result"
-  | "review";
+  | "review"
+  | "customers"
+  | "customerDetail";
 
 export function LendenInputScreen() {
   const [screen, setScreen] = useState<ScreenState>("ready");
   const [typedText, setTypedText] = useState("");
   const [transcript, setTranscript] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+    const [customers, setCustomers] = useState<
+    {
+      id: number;
+      customerName: string;
+      balance: number;
+      promiseAmount: string | null;
+      promiseDate: string | null;
+      notes: string | null;
+      lastTransactionDate: string | null;
+    }[]
+  >([]);
+
+  const [selectedCustomer, setSelectedCustomer] = useState<{
+    customer: {
+      id: number;
+      customerName: string;
+      promiseAmount: string | null;
+      promiseDate: string | null;
+      notes: string | null;
+    };
+    balance: number;
+    transactions: {
+      id: number;
+      amount: string;
+      type: "purchase" | "payment" | "adjustment";
+      date: string;
+      source: "voice" | "type";
+      notes: string | null;
+    }[];
+  } | null>(null);
 
   const [extracted, setExtracted] = useState<{
   customer_name: string | null;
@@ -163,12 +195,55 @@ setExtracted({
   notes: extractData.notes ?? null,
 });
 
-setScreen("result");
+await loadCustomers();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Transcription failed.",
       );
       setScreen("ready");
+    }
+  };
+    const loadCustomers = async () => {
+    try {
+      setErrorMessage("");
+
+      const response = await fetch("/api/customers");
+
+      if (!response.ok) {
+        throw new Error("Could not load customers.");
+      }
+
+      const data = (await response.json()) as typeof customers;
+      setCustomers(data);
+      setScreen("customers");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load customers.",
+      );
+    }
+  };
+
+  const loadCustomer = async (customerId: number) => {
+    try {
+      setErrorMessage("");
+
+      const response = await fetch(`/api/customers/${customerId}`);
+
+      if (!response.ok) {
+        throw new Error("Could not load customer history.");
+      }
+
+      const data = (await response.json()) as typeof selectedCustomer;
+      setSelectedCustomer(data);
+      setScreen("customerDetail");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load customer history.",
+      );
     }
   };
 
@@ -489,10 +564,14 @@ setScreen("result");
     };
 
     if (!response.ok) {
-      throw new Error(data.error || "Could not save this note.");
-    }
+  throw new Error(data.error || "Could not save this note.");
+}
 
-    setScreen("result");
+setTypedText("");
+setTranscript("");
+setExtracted(null);
+setErrorMessage("");
+setScreen("ready");
   } catch (error) {
     setErrorMessage(
       error instanceof Error
@@ -508,6 +587,214 @@ setScreen("result");
       </div>
     )}
   </section>
+) : screen === "customers" ? (
+  <section className="flex flex-1 flex-col pb-12">
+    <button
+      type="button"
+      onClick={() => setScreen("ready")}
+      className="mb-8 flex items-center gap-2 text-sm font-bold text-[#59716a] hover:text-[#174f45]"
+    >
+      <ArrowLeft size={16} />
+      Back
+    </button>
+
+    <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
+      Business memory
+    </p>
+
+    <h1 className="text-[38px] font-bold leading-[1.05] tracking-[-0.04em]">
+      Customers
+    </h1>
+
+    <p className="mt-3 text-[15px] leading-6 text-[#789089]">
+      Lenden remembers who owes you, who paid, and what they promised.
+    </p>
+
+    <div className="mt-8 space-y-3">
+      {customers.length === 0 ? (
+        <div className="rounded-[26px] border border-[#dfe6df] bg-white p-6 text-center">
+          <p className="text-lg font-bold text-[#31564d]">
+            No customers yet
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[#789089]">
+            Save your first customer note to start building your business
+            memory.
+          </p>
+        </div>
+      ) : (
+        customers.map((customer) => (
+          <button
+            key={customer.id}
+            type="button"
+            onClick={() => void loadCustomer(customer.id)}
+            className="w-full rounded-[24px] border border-[#dfe6df] bg-white p-5 text-left shadow-[0_8px_24px_rgba(36,73,63,0.05)] transition hover:border-[#b8cfc4] hover:shadow-[0_12px_28px_rgba(36,73,63,0.08)]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-bold text-[#173b35]">
+                  {customer.customerName}
+                </p>
+
+                <p className="mt-1 text-sm text-[#789089]">
+                  {customer.balance > 0
+                    ? `₹${customer.balance.toLocaleString("en-IN")} outstanding`
+                    : customer.balance < 0
+                      ? `₹${Math.abs(customer.balance).toLocaleString("en-IN")} credit`
+                      : "Settled"}
+                </p>
+              </div>
+
+              <span className="text-xl text-[#a2b1ab]">›</span>
+            </div>
+
+            {customer.promiseAmount && customer.promiseDate ? (
+              <div className="mt-4 rounded-2xl bg-[#fffaf2] px-4 py-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#b2762c]">
+                  Promise
+                </p>
+
+                <p className="mt-1 text-sm font-semibold text-[#31564d]">
+                  ₹{Number(customer.promiseAmount).toLocaleString("en-IN")}
+                  {" · "}
+                  {new Date(customer.promiseDate).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </p>
+              </div>
+            ) : null}
+
+            {customer.lastTransactionDate ? (
+              <p className="mt-3 text-xs text-[#9aaba4]">
+                Last transaction:{" "}
+                {new Date(customer.lastTransactionDate).toLocaleDateString(
+                  "en-IN",
+                  {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  },
+                )}
+              </p>
+            ) : null}
+          </button>
+        ))
+      )}
+    </div>
+  </section>
+) : screen === "customerDetail" ? (
+  <section className="flex flex-1 flex-col pb-12">
+    <button
+      type="button"
+      onClick={() => setScreen("customers")}
+      className="mb-8 flex items-center gap-2 text-sm font-bold text-[#59716a] hover:text-[#174f45]"
+    >
+      <ArrowLeft size={16} />
+      Customers
+    </button>
+
+    {selectedCustomer ? (
+      <>
+        <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
+          Business memory
+        </p>
+
+        <h1 className="text-[38px] font-bold leading-[1.05] tracking-[-0.04em]">
+          {selectedCustomer.customer.customerName}
+        </h1>
+
+        <div className="mt-8 rounded-[26px] bg-[#174f45] p-6 text-white">
+          <p className="text-sm font-semibold opacity-80">
+            Outstanding
+          </p>
+
+          <p className="mt-2 text-[36px] font-bold tracking-[-0.04em]">
+            ₹{selectedCustomer.balance.toLocaleString("en-IN")}
+          </p>
+        </div>
+
+        {selectedCustomer.customer.promiseAmount &&
+        selectedCustomer.customer.promiseDate ? (
+          <div className="mt-4 rounded-[24px] border border-[#eadfce] bg-[#fffaf2] p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#b2762c]">
+              Promise
+            </p>
+
+            <p className="mt-2 text-lg font-bold text-[#31564d]">
+              ₹
+              {Number(
+                selectedCustomer.customer.promiseAmount,
+              ).toLocaleString("en-IN")}
+            </p>
+
+            <p className="mt-1 text-sm text-[#789089]">
+              by{" "}
+              {new Date(
+                selectedCustomer.customer.promiseDate,
+              ).toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mt-8">
+          <p className="mb-4 text-sm font-bold uppercase tracking-[0.16em] text-[#59716a]">
+            Transaction history
+          </p>
+
+          <div className="space-y-3">
+            {selectedCustomer.transactions.map((transaction) => (
+              <div
+                key={transaction.id}
+                className="flex items-center justify-between rounded-[22px] border border-[#dfe6df] bg-white p-5"
+              >
+                <div>
+                  <p className="font-bold capitalize text-[#31564d]">
+                    {transaction.type}
+                  </p>
+
+                  <p className="mt-1 text-xs text-[#9aaba4]">
+                    {new Date(transaction.date).toLocaleDateString(
+                      "en-IN",
+                      {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      },
+                    )}
+                  </p>
+
+                  {transaction.notes ? (
+                    <p className="mt-1 text-xs text-[#789089]">
+                      {transaction.notes}
+                    </p>
+                  ) : null}
+                </div>
+
+                <p
+                  className={`text-lg font-bold ${
+                    Number(transaction.amount) < 0
+                      ? "text-[#31564d]"
+                      : "text-[#b2762c]"
+                  }`}
+                >
+                  {Number(transaction.amount) > 0 ? "+" : ""}
+                  ₹
+                  {Math.abs(
+                    Number(transaction.amount),
+                  ).toLocaleString("en-IN")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    ) : null}
+  </section>
+
 ) : screen === "result" ? (
           <section className="flex flex-1 flex-col justify-center pb-14">
             <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
@@ -613,6 +900,17 @@ setScreen("result");
                   Type instead
                 </button>
               )}
+
+               {!isWorking && (
+                <button
+                  type="button"
+                  onClick={() => void loadCustomers()}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-[#3c6b5e] transition hover:bg-[#e9efe8]"
+                >
+                  View Business Memory
+                </button>
+              )}
+
             </section>
 
             <section className="rounded-[22px] border border-[#e2e9e1] bg-[#eef3ed] px-5 py-4">
