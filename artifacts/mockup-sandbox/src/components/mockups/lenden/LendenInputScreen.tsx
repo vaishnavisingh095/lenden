@@ -15,6 +15,15 @@ export function LendenInputScreen() {
   const [typedText, setTypedText] = useState("");
   const [transcript, setTranscript] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const [extracted, setExtracted] = useState<{
+  customer_name: string | null;
+  amount: number | null;
+  amount_type: "received" | "promised" | "outstanding" | null;
+  promise_date: string | null;
+  notes: string | null;
+} | null>(null);
+
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
@@ -39,11 +48,12 @@ export function LendenInputScreen() {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       });
       recorder.addEventListener("stop", () => {
-        stream.getTracks().forEach((track) => track.stop());
+  stream.getTracks().forEach((track) => track.stop());
+  recorderRef.current = null;
 
-        const audio = new Blob(chunksRef.current, {
-          type: "audio/webm",
-        });
+  const audio = new Blob(chunksRef.current, {
+    type: "audio/webm",
+  });
 
   void transcribe(audio);
 });
@@ -69,12 +79,23 @@ export function LendenInputScreen() {
   };
 
   const stopListening = () => {
-    const recorder = recorderRef.current;
-    if (recorder?.state === "recording" || recorder?.state === "paused") {
-      setScreen("processing");
-      recorder.stop();
-    }
-  };
+  const recorder = recorderRef.current;
+
+  if (!recorder) {
+    setErrorMessage("No active recording found.");
+    setScreen("ready");
+    return;
+  }
+
+  if (recorder.state === "inactive") {
+    recorderRef.current = null;
+    setScreen("ready");
+    return;
+  }
+
+  setScreen("processing");
+  recorder.stop();
+};
 
   const transcribe = async (audio: Blob) => {
     const extension = audio.type.split("/", 2)[1]?.split(";", 1)[0] || "webm";
@@ -99,8 +120,50 @@ export function LendenInputScreen() {
               : "Transcription failed";
         throw new Error(message);
       }
-      setTranscript(data.transcript || "No speech was detected.");
-      setScreen("result");
+      const finalTranscript = data.transcript || "";
+
+setTranscript(finalTranscript);
+
+if (!finalTranscript.trim()) {
+  setErrorMessage("No speech was detected.");
+  setScreen("ready");
+  return;
+}
+
+const extractResponse = await fetch("/api/extract", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    transcript: finalTranscript,
+  }),
+});
+
+const extractData = (await extractResponse.json()) as {
+  customer_name?: string | null;
+  amount?: number | null;
+  amount_type?: "received" | "promised" | "outstanding" | null;
+  promise_date?: string | null;
+  notes?: string | null;
+  error?: string;
+};
+
+if (!extractResponse.ok) {
+  throw new Error(
+    extractData.error || "Could not understand payment details.",
+  );
+}
+
+setExtracted({
+  customer_name: extractData.customer_name ?? null,
+  amount: extractData.amount ?? null,
+  amount_type: extractData.amount_type ?? null,
+  promise_date: extractData.promise_date ?? null,
+  notes: extractData.notes ?? null,
+});
+
+setScreen("result");
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Transcription failed.",
@@ -110,11 +173,12 @@ export function LendenInputScreen() {
   };
 
   const reset = () => {
-    setTypedText("");
-    setTranscript("");
-    setErrorMessage("");
-    setScreen("ready");
-  };
+  setTypedText("");
+  setTranscript("");
+  setExtracted(null);
+  setErrorMessage("");
+  setScreen("ready");
+};
 
   const isWorking =
     screen === "listening" || screen === "paused" || screen === "processing";
@@ -125,14 +189,65 @@ export function LendenInputScreen() {
         <header className="flex items-start justify-between">
           {screen === "review" ? (
             <button
-              type="button"
-              onClick={() => setScreen("result")}
-              className="mt-1 inline-flex items-center gap-2 rounded-full px-1 py-2 text-sm font-semibold text-[#59716a] transition hover:text-[#173b35]"
-              aria-label="Back to transcript"
-            >
-              <ArrowLeft size={18} strokeWidth={2.2} />
-              Back
-            </button>
+  type="button"
+  onClick={async () => {
+    const finalTranscript = typedText.trim();
+
+    if (!finalTranscript) return;
+
+    setErrorMessage("");
+    setTranscript(finalTranscript);
+    setScreen("processing");
+
+    try {
+      const extractResponse = await fetch("/api/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transcript: finalTranscript,
+        }),
+      });
+
+      const extractData = (await extractResponse.json()) as {
+        customer_name?: string | null;
+        amount?: number | null;
+        amount_type?: "received" | "promised" | "outstanding" | null;
+        promise_date?: string | null;
+        notes?: string | null;
+        error?: string;
+      };
+
+      if (!extractResponse.ok) {
+        throw new Error(
+          extractData.error || "Could not understand payment details.",
+        );
+      }
+
+      setExtracted({
+        customer_name: extractData.customer_name ?? null,
+        amount: extractData.amount ?? null,
+        amount_type: extractData.amount_type ?? null,
+        promise_date: extractData.promise_date ?? null,
+        notes: extractData.notes ?? null,
+      });
+
+      setScreen("result");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not understand payment details.",
+      );
+      setScreen("ready");
+    }
+  }}
+  disabled={!typedText.trim()}
+  className="mt-6 h-14 rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] disabled:cursor-not-allowed disabled:opacity-40"
+>
+  Continue
+</button>
           ) : (
             <div>
               <p className="text-[20px] font-black tracking-[0.22em] text-[#174f45]">
@@ -163,7 +278,10 @@ export function LendenInputScreen() {
             />
             <button
               type="button"
-              onClick={() => setScreen("result")}
+              onClick={() => {
+               setTranscript(typedText.trim());
+               setScreen("result");
+}}
               disabled={!typedText.trim()}
               className="mt-6 h-14 rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] transition hover:bg-[#123f38] disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -179,35 +297,221 @@ export function LendenInputScreen() {
             </button>
           </section>
         ) : screen === "review" ? (
-          <section className="flex flex-1 flex-col justify-center pb-12">
-            <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
-              One last look
-            </p>
-            <h1 className="text-[38px] font-bold leading-[1.05] tracking-[-0.04em]">
-              Review details
-            </h1>
-            <div className="mt-8 rounded-[26px] border border-[#dfe6df] bg-white p-5 shadow-[0_12px_30px_rgba(36,73,63,0.07)]">
-              <p className="text-[17px] leading-8 text-[#31564d]">
-                {transcript}
-              </p>
-              <div className="mt-5 flex items-center gap-2 border-t border-[#edf0ec] pt-4 text-sm text-[#789089]">
-                <Check size={17} className="text-[#2d8067]" />
-                Ready to save later
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={reset}
-              className="mt-6 flex h-14 items-center justify-center gap-2 rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] transition hover:bg-[#123f38]"
-            >
-              <RotateCcw size={18} />
-              Start another note
-            </button>
-            <p className="mt-3 text-center text-xs text-[#91a29d]">
-              Saving is not connected in this prototype.
-            </p>
-          </section>
-        ) : screen === "result" ? (
+  <section className="flex flex-1 flex-col justify-center pb-12">
+    <button
+      type="button"
+      onClick={() => setScreen("result")}
+      className="mb-8 flex items-center gap-2 text-sm font-bold text-[#59716a] hover:text-[#174f45]"
+    >
+      <ArrowLeft size={16} />
+      Back
+    </button>
+
+    <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
+      One last look
+    </p>
+
+    <h1 className="text-[38px] font-bold leading-[1.05] tracking-[-0.04em]">
+      Review details
+    </h1>
+
+    <p className="mt-3 text-[15px] leading-6 text-[#789089]">
+      Lenden understood this from your note. Check the details before saving.
+    </p>
+
+    {extracted &&
+    !extracted.customer_name &&
+    extracted.amount === null &&
+    !extracted.amount_type &&
+    !extracted.promise_date &&
+    !extracted.notes ? (
+      <div className="mt-8 rounded-[26px] border border-[#eadfce] bg-[#fffaf2] p-6">
+        <p className="text-lg font-bold text-[#31564d]">
+          Couldn't find payment details
+        </p>
+
+        <p className="mt-2 text-sm leading-6 text-[#789089]">
+          I couldn't identify a customer or payment from this note.
+        </p>
+
+        <button
+          type="button"
+          onClick={() =>
+            setExtracted({
+              customer_name: "",
+              amount: null,
+              amount_type: null,
+              promise_date: "",
+              notes: "",
+            })
+          }
+          className="mt-5 h-12 w-full rounded-2xl bg-[#174f45] text-sm font-bold text-white"
+        >
+          Add details manually
+        </button>
+      </div>
+    ) : (
+      <div className="mt-8 space-y-4">
+        <label className="block">
+          <span className="mb-2 block text-sm font-bold text-[#59716a]">
+            Customer
+          </span>
+          <input
+            value={extracted?.customer_name ?? ""}
+            onChange={(event) =>
+              setExtracted((current) =>
+                current
+                  ? { ...current, customer_name: event.target.value }
+                  : current,
+              )
+            }
+            placeholder="Customer name"
+            className="h-14 w-full rounded-2xl border border-[#dfe6df] bg-white px-4 text-[16px] text-[#31564d] outline-none focus:border-[#79a693] focus:ring-4 focus:ring-[#dceae2]"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-bold text-[#59716a]">
+            Amount
+          </span>
+          <input
+            type="number"
+            value={extracted?.amount ?? ""}
+            onChange={(event) =>
+              setExtracted((current) =>
+                current
+                  ? {
+                      ...current,
+                      amount:
+                        event.target.value === ""
+                          ? null
+                          : Number(event.target.value),
+                    }
+                  : current,
+              )
+            }
+            placeholder="Amount"
+            className="h-14 w-full rounded-2xl border border-[#dfe6df] bg-white px-4 text-[16px] text-[#31564d] outline-none focus:border-[#79a693] focus:ring-4 focus:ring-[#dceae2]"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-bold text-[#59716a]">
+            Payment status
+          </span>
+          <select
+            value={extracted?.amount_type ?? ""}
+            onChange={(event) =>
+              setExtracted((current) =>
+                current
+                  ? {
+                      ...current,
+                      amount_type:
+                        (event.target.value as
+                          | "received"
+                          | "promised"
+                          | "outstanding"
+                          | "") || null,
+                    }
+                  : current,
+              )
+            }
+            className="h-14 w-full rounded-2xl border border-[#dfe6df] bg-white px-4 text-[16px] text-[#31564d] outline-none focus:border-[#79a693] focus:ring-4 focus:ring-[#dceae2]"
+          >
+            <option value="">Not specified</option>
+            <option value="received">Received</option>
+            <option value="promised">Promised</option>
+            <option value="outstanding">Outstanding</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-bold text-[#59716a]">
+            Promise date
+          </span>
+          <input
+            value={extracted?.promise_date ?? ""}
+            onChange={(event) =>
+              setExtracted((current) =>
+                current
+                  ? { ...current, promise_date: event.target.value }
+                  : current,
+              )
+            }
+            placeholder="e.g. Friday or next Monday"
+            className="h-14 w-full rounded-2xl border border-[#dfe6df] bg-white px-4 text-[16px] text-[#31564d] outline-none focus:border-[#79a693] focus:ring-4 focus:ring-[#dceae2]"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-bold text-[#59716a]">
+            Notes
+          </span>
+          <textarea
+            value={extracted?.notes ?? ""}
+            onChange={(event) =>
+              setExtracted((current) =>
+                current
+                  ? { ...current, notes: event.target.value }
+                  : current,
+              )
+            }
+            placeholder="Anything else relevant"
+            className="min-h-[110px] w-full resize-none rounded-2xl border border-[#dfe6df] bg-white p-4 text-[16px] leading-7 text-[#31564d] outline-none focus:border-[#79a693] focus:ring-4 focus:ring-[#dceae2]"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={async () => {
+  if (!extracted?.customer_name) {
+    setErrorMessage("Customer name is required.");
+    return;
+  }
+
+  try {
+    setErrorMessage("");
+
+    const response = await fetch("/api/customers/notes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        customer_name: extracted.customer_name,
+        amount: extracted.amount,
+        amount_type: extracted.amount_type,
+        promise_date: extracted.promise_date,
+        notes: extracted.notes,
+        transcript,
+      }),
+    });
+
+    const data = (await response.json()) as {
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not save this note.");
+    }
+
+    setScreen("result");
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error
+        ? error.message
+        : "Could not save this note.",
+    );
+  }
+}}
+          className="mt-3 h-14 w-full rounded-2xl bg-[#174f45] text-base font-bold text-white shadow-[0_8px_20px_rgba(23,79,69,0.2)] transition hover:bg-[#123f38]"
+        >
+          Save this note
+        </button>
+      </div>
+    )}
+  </section>
+) : screen === "result" ? (
           <section className="flex flex-1 flex-col justify-center pb-14">
             <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
               Got it
