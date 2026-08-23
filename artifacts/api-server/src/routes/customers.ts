@@ -257,4 +257,122 @@ router.post("/customers/notes", async (req, res) => {
     });
   }
 });
+router.get("/customers/:id", async (req, res) => {
+  const customerId = Number(req.params.id);
+
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    res.status(400).json({
+      error: "Invalid customer id",
+    });
+
+    return;
+  }
+
+  try {
+    const [customer] = await db
+      .select({
+        id: customersTable.id,
+        customerName: customersTable.customerName,
+        promiseAmount: customersTable.promiseAmount,
+        promiseDate: customersTable.promiseDate,
+        notes: customersTable.notes,
+      })
+      .from(customersTable)
+      .where(sql`${customersTable.id} = ${customerId}`)
+      .limit(1);
+
+    if (!customer) {
+      res.status(404).json({
+        error: "Customer not found",
+      });
+
+      return;
+    }
+
+    const transactions = await db
+      .select({
+        id: transactionsTable.id,
+        amount: transactionsTable.amount,
+        type: transactionsTable.type,
+        date: transactionsTable.date,
+        source: transactionsTable.source,
+        notes: transactionsTable.notes,
+      })
+      .from(transactionsTable)
+      .where(
+        sql`${transactionsTable.customerId} = ${customerId}`,
+      )
+      .orderBy(sql`${transactionsTable.date} DESC`);
+
+    const balance = transactions.reduce(
+      (total, transaction) =>
+        total + Number(transaction.amount),
+      0,
+    );
+
+    res.json({
+      customer,
+      balance,
+      transactions,
+    });
+  } catch (error) {
+    req.log.error(
+      { err: error },
+      "Could not load customer history",
+    );
+
+    res.status(500).json({
+      error: "Could not load customer history",
+    });
+  }
+});
+router.get("/customers", async (_req, res) => {
+  try {
+    const customers = await db
+      .select({
+        id: customersTable.id,
+        customerName: customersTable.customerName,
+        promiseAmount: customersTable.promiseAmount,
+        promiseDate: customersTable.promiseDate,
+        notes: customersTable.notes,
+
+        balance: sql<string>`
+          COALESCE(SUM(${transactionsTable.amount}), 0)
+        `,
+
+        lastTransactionDate: sql<Date | null>`
+          MAX(${transactionsTable.date})
+        `,
+      })
+      .from(customersTable)
+      .leftJoin(
+        transactionsTable,
+        sql`${transactionsTable.customerId} = ${customersTable.id}`,
+      )
+      .groupBy(
+        customersTable.id,
+        customersTable.customerName,
+        customersTable.promiseAmount,
+        customersTable.promiseDate,
+        customersTable.notes,
+      )
+      .orderBy(customersTable.customerName);
+
+    res.json(
+      customers.map((customer) => ({
+        ...customer,
+        balance: Number(customer.balance),
+      })),
+    );
+  } catch (error) {
+    _req.log.error(
+      { err: error },
+      "Could not load customers",
+    );
+
+    res.status(500).json({
+      error: "Could not load customers",
+    });
+  }
+});
 export default router;
