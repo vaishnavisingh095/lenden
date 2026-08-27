@@ -37,7 +37,9 @@ export const customersTable = pgTable("customers", {
     withTimezone: true,
   }),
 
-  notes: text("notes"),
+    notes: text("notes"),
+
+  phone: text("phone"),
 
   createdAt: timestamp("created_at", {
     withTimezone: true,

@@ -8,30 +8,42 @@ const extractionSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    customer_name: {
-      type: ["string", "null"],
-    },
-    amount: {
-      type: ["number", "null"],
-    },
-    amount_type: {
-      type: ["string", "null"],
-      enum: ["received", "promised", "outstanding", null],
-    },
-    promise_date: {
-      type: ["string", "null"],
-    },
-    notes: {
-      type: ["string", "null"],
+    events: {
+      type: "array",
+      minItems: 1,
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          customer_name: {
+            type: ["string", "null"],
+          },
+          amount: {
+            type: ["number", "null"],
+          },
+          amount_type: {
+            type: ["string", "null"],
+            enum: ["received", "promised", "outstanding", null],
+          },
+          promise_date: {
+            type: ["string", "null"],
+          },
+          notes: {
+            type: ["string", "null"],
+          },
+        },
+        required: [
+          "customer_name",
+          "amount",
+          "amount_type",
+          "promise_date",
+          "notes",
+        ],
+      },
     },
   },
-  required: [
-    "customer_name",
-    "amount",
-    "amount_type",
-    "promise_date",
-    "notes",
-  ],
+  required: ["events"],
 };
 
 router.post("/extract", async (req, res) => {
@@ -58,27 +70,96 @@ router.post("/extract", async (req, res) => {
   }
 
   const systemPrompt = `
-You extract structured payment information from a business owner's voice note.
+You extract financial events from a business owner's natural voice note.
 
-The transcript may be in Hindi, English, or Hinglish.
+The transcript may be in Hindi, Hinglish, or English.
 
-Extract exactly these fields:
+IMPORTANT:
+A single transcript may contain multiple financial events.
 
-- customer_name: the customer's name, or null
-- amount: numeric payment amount, or null
-- amount_type: exactly one of "received", "promised", "outstanding", or null
-- promise_date: natural-language date such as "Friday", "next Monday", or null
-- notes: other relevant payment context, or null
+Return an "events" array containing every distinct financial event.
+Return between 1 and 3 events.
+Always return an array, even when there is only one event.
 
-Rules:
-1. Do not guess or invent information.
-2. If a field is not clearly mentioned, return null.
-3. Convert spoken/natural amounts into numbers where possible.
-   Example: "चार हजार" → 4000.
-4. "दे चुका है", "मिल गया", "paid", etc. means "received".
-5. "देगा", "बाद में देगा", "Friday ko dega", etc. means "promised".
-6. "बाकी है", "बाकी ₹5000", "outstanding", etc. means "outstanding".
-7. Return only the requested structured object.
+Supported event types:
+
+1. "received"
+   The customer actually paid money.
+   Examples:
+   - "paid 3000"
+   - "teen hazaar diya"
+   - "payment mil gaya"
+
+2. "outstanding"
+   The customer bought something on credit or owes money.
+   Examples:
+   - "bought goods worth 5000 on credit"
+   - "5000 ka saaman liya"
+   - "5000 udhar liya"
+   - "5000 baaki hai"
+
+3. "promised"
+   The customer said they will pay later.
+   Examples:
+   - "will pay 3000 Monday"
+   - "Monday ko dega"
+   - "Friday tak paisa dega"
+   CUSTOMER NAME FORMAT:
+Always return customer_name using Latin/English script.
+
+If the transcript contains a Hindi/Devanagari customer name,
+transliterate it into Latin/English script.
+
+Examples:
+- "रमेश" → "Ramesh"
+- "शर्मा" → "Sharma"
+- "सुरेश" → "Suresh"
+
+Do not return Devanagari customer names.
+Preserve the actual name; do not translate it into a different name.
+
+Each event must contain:
+
+- customer_name: customer name, or null
+- amount: numeric amount, or null
+- amount_type: received, promised, outstanding, or null
+- promise_date: date expression if relevant, otherwise null
+- notes: useful context, otherwise null
+
+IMPORTANT CUSTOMER RULE:
+The transcript contains only ONE customer.
+If the customer name is mentioned once, apply that same customer to later
+events referring to that same person.
+
+IMPORTANT EVENT RULE:
+Do NOT merge separate financial events.
+
+For example:
+
+"Sharma ne teen hazaar diya, do hazaar ka naya saamaan liya,
+aur bola baaki paisa Monday tak dega."
+
+must produce THREE events:
+
+1. received ₹3000
+2. outstanding ₹2000
+3. promised, date Monday
+
+If a promise does not explicitly state its amount, return amount as null.
+Do not invent or calculate an amount.
+
+Do not invent customer names, amounts, dates, or transaction types.
+
+Convert spoken amounts into numbers:
+- "teen hazaar" → 3000
+- "do hazaar" → 2000
+- "pachaas hazaar" → 50000
+- "50k" → 50000
+- "2 lakh" → 200000
+
+Understand natural Hindi, Hinglish, and English.
+
+Return ONLY the structured JSON object.
 `;
 
   try {
@@ -102,7 +183,7 @@ Rules:
         ],
         temperature: 0,
         reasoning_effort: null,
-        max_tokens: 500,
+        max_tokens: 800,
         response_format: {
           type: "json_schema",
           json_schema: {
