@@ -651,36 +651,37 @@ setScreen("result");
 
          
           {/* Amount */}
-          <label className="mt-5 block">
-            <span className="text-sm font-bold text-[#31564d]">
-              Amount
-            </span>
+{!(event.amount_type === "promised" && event.amount === null) && (
+  <label className="mt-5 block">
+    <span className="text-sm font-bold text-[#31564d]">
+      Amount
+    </span>
 
-           <div className="flex h-14 items-center rounded-2xl border border-[#d9e3df] bg-white px-4 focus-within:border-[#7ba99e] focus-within:ring-4 focus-within:ring-[#dceae2]">
-  <span className="mr-3 text-lg font-semibold text-[#173b35]">
-    ₹
-  </span>
+    <div className="mt-2 flex h-14 items-center rounded-2xl border border-[#d9e3df] bg-white px-4 focus-within:border-[#7ba99e] focus-within:ring-4 focus-within:ring-[#dceae2]">
+      <span className="mr-3 text-lg font-semibold text-[#173b35]">
+        ₹
+      </span>
 
-  <input
-    type="number"
-    value={event.amount ?? ""}
-    onChange={(e) => {
-      const updated = [...extractedEvents];
+      <input
+        type="number"
+        value={event.amount ?? ""}
+        onChange={(e) => {
+          const updated = [...extractedEvents];
 
-      updated[index] = {
-        ...updated[index],
-        amount:
-          e.target.value === "" ? null : Number(e.target.value),
-      };
+          updated[index] = {
+            ...updated[index],
+            amount:
+              e.target.value === "" ? null : Number(e.target.value),
+          };
 
-      setExtractedEvents(updated);
-    }}
-    placeholder="Amount"
-    className="min-w-0 flex-1 bg-transparent text-lg font-semibold text-[#173b35] outline-none"
-  />
-</div>
-          </label>
-
+          setExtractedEvents(updated);
+        }}
+        placeholder="Amount"
+        className="min-w-0 flex-1 bg-transparent text-lg font-semibold text-[#173b35] outline-none"
+      />
+    </div>
+  </label>
+)}
           {/* Type */}
           <label className="mt-5 block">
             <span className="text-sm font-bold text-[#31564d]">
