@@ -23,6 +23,7 @@ type ScreenState =
   | "result"
   | "review"
   | "customers"
+  | "today"
   | "customerDetail";
 
 export function LendenInputScreen() {
@@ -32,18 +33,24 @@ export function LendenInputScreen() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
     const [customers, setCustomers] = useState<
-    {
-      id: number;
-      customerName: string;
-      phone: string | null;
-      phoneNumbers: string[];
-      balance: number;
-      promiseAmount: string | null;
-      promiseDate: string | null;
-      notes: string | null;
-      lastTransactionDate: string | null;
-    }[]
-  >([]);
+  {
+    id: number;
+    customerName: string;
+    phone: string | null;
+    phoneNumbers: string[];
+    balance: number;
+    promiseAmount: string | null;
+    promiseDate: string | null;
+    notes: string | null;
+    lastTransactionDate: string | null;
+
+    followUp: {
+      priority: "high" | "medium" | "low";
+      recommendedAction: "call" | "whatsapp" | "none";
+      reason: string;
+    };
+  }[]
+>([]);
 
   const [selectedCustomer, setSelectedCustomer] = useState<{
     customer: {
@@ -307,6 +314,27 @@ setScreen("result");
       );
     }
   };
+  const loadToday = async () => {
+  try {
+    setErrorMessage("");
+
+    const response = await fetch(`${API_URL}/api/customers`);
+
+    if (!response.ok) {
+      throw new Error("Could not load today's recovery queue.");
+    }
+
+    const data = (await response.json()) as typeof customers;
+    setCustomers(data);
+    setScreen("today");
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error
+        ? error.message
+        : "Could not load today's recovery queue.",
+    );
+  }
+};
   const refreshCustomers = async () => {
     try {
       const response = await fetch(`${API_URL}/api/customers`);
@@ -531,7 +559,6 @@ if (events.length === 0) {
 setExtractedEvents(events);
 setScreen("result");
 
-      setScreen("result");
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -556,8 +583,392 @@ setScreen("result");
             </button>
           </section>
 
+) : screen === "today" ? (
+  <section className="flex flex-1 flex-col pb-12">
+    <button
+      type="button"
+      onClick={() => setScreen("ready")}
+      className="mb-8 flex items-center gap-2 text-sm font-bold text-[#59716a] hover:text-[#174f45]"
+    >
+      <ArrowLeft size={16} />
+      Back
+    </button>
 
+    <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-[#b2762c]">
+      Recovery
+    </p>
 
+    <h1 className="text-[38px] font-bold leading-[1.05] tracking-[-0.04em]">
+      Today
+    </h1>
+
+    <p className="mt-3 text-[15px] leading-6 text-[#789089]">
+      Who needs your attention today.
+    </p>
+
+    {(() => {
+  const activeCustomers = customers.filter(
+    (customer) => customer.balance > 0,
+  );
+
+  const highPriority = activeCustomers
+    .filter(
+      (customer) =>
+        customer.followUp.priority === "high",
+    )
+    .sort(
+      (a, b) => b.balance - a.balance,
+    );
+
+  const mediumPriority = activeCustomers
+    .filter(
+      (customer) =>
+        customer.followUp.priority === "medium",
+    )
+    .sort(
+      (a, b) => b.balance - a.balance,
+    );
+
+  const lowPriority = activeCustomers
+    .filter(
+      (customer) =>
+        customer.followUp.priority === "low" &&
+        customer.promiseDate,
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.promiseDate!).getTime() -
+        new Date(b.promiseDate!).getTime(),
+    );
+
+  const attentionCustomers = [
+    ...highPriority,
+    ...mediumPriority,
+  ];
+
+  
+      const attentionAmount = attentionCustomers.reduce(
+        (sum, customer) => sum + customer.balance,
+        0,
+      );
+        const upcoming = activeCustomers
+    .filter(
+      (customer) =>
+        customer.promiseDate &&
+        new Date(customer.promiseDate) > new Date(),
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.promiseDate!).getTime() -
+        new Date(b.promiseDate!).getTime(),
+    );
+
+      return (
+        <>
+          <div className="mt-6 rounded-[26px] bg-[#174f45] p-6 text-white">
+            <p className="text-sm font-semibold opacity-80">
+              Needs attention
+            </p>
+
+            <p className="mt-2 text-[34px] font-bold tracking-[-0.04em]">
+              ₹{attentionAmount.toLocaleString("en-IN")}
+            </p>
+
+            <p className="mt-1 text-sm opacity-75">
+              {attentionCustomers.length}{" "}
+              {attentionCustomers.length === 1
+                ? "customer"
+                : "customers"}{" "}
+              to follow up
+            </p>
+          </div>
+
+          {highPriority.length > 0 ? (
+            <div className="mt-8">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[#b2762c]">
+                High priority
+              </p>
+
+              <div className="space-y-3">
+                {highPriority.map((customer) => (
+                  <div
+                    key={customer.id}
+                    className="rounded-[24px] border border-[#eadfce] bg-white p-5 shadow-[0_8px_24px_rgba(36,73,63,0.05)]"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-lg font-bold text-[#173b35]">
+                          {formatCustomerName(
+                            customer.customerName,
+                          )}
+                        </p>
+
+                        <p className="mt-1 text-sm font-semibold text-[#b2762c]">
+                          ₹
+                          {customer.balance.toLocaleString(
+                            "en-IN",
+                          )}{" "}
+                          outstanding
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-[#fff4df] px-3 py-1 text-xs font-bold text-[#a56b20]">
+                        HIGH
+                      </span>
+                    </div>
+
+                   <p className="mt-4 text-sm leading-6 text-[#59716a]">
+  {customer.followUp.reason}
+</p>
+
+                    {customer.promiseDate ? (
+                      <p className="mt-2 text-xs font-semibold text-[#789089]">
+                        Promise date:{" "}
+                        {new Date(
+                          customer.promiseDate,
+                        ).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-4 flex gap-2">
+  {customer.phoneNumbers.length > 0 || customer.phone ? (
+  customer.followUp.recommendedAction === "call" ? (
+    <a
+      href={`tel:${customer.phoneNumbers[0] || customer.phone}`}
+      onClick={() =>
+        void logContactEvent(customer.id, "call")
+      }
+      className="flex-1 rounded-2xl bg-[#174f45] px-4 py-3 text-center text-sm font-bold text-white transition hover:bg-[#123f38]"
+    >
+      Call customer
+    </a>
+  ) : (
+    <a
+      href={`https://wa.me/${(
+        customer.phoneNumbers[0] ||
+        customer.phone ||
+        ""
+      )
+        .replace(/\D/g, "")
+        .replace(/^0/, "91")}?text=${encodeURIComponent(
+        `Hi ${formatCustomerName(customer.customerName)},\n\nThis is a quick reminder that ₹${customer.balance.toLocaleString(
+          "en-IN",
+        )} is currently outstanding.\n\nPlease let me know when you expect to make the payment. Thank you.`,
+      )}`}
+      onClick={() =>
+        void logContactEvent(customer.id, "whatsapp")
+      }
+      target="_blank"
+      rel="noreferrer"
+      className="flex-1 rounded-2xl bg-[#174f45] px-4 py-3 text-center text-sm font-bold text-white transition hover:bg-[#123f38]"
+    >
+      WhatsApp
+    </a>
+  )
+) : (
+  <button
+    type="button"
+    onClick={() =>
+      void loadCustomer(customer.id)
+    }
+    className="flex-1 rounded-2xl border border-[#dfe6df] bg-white px-4 py-3 text-sm font-bold text-[#31564d]"
+  >
+    Add phone number
+  </button>
+)}
+
+  <button
+    type="button"
+    onClick={() =>
+      void loadCustomer(customer.id)
+    }
+    className="rounded-2xl border border-[#dfe6df] bg-white px-4 py-3 text-sm font-bold text-[#59716a]"
+  >
+    View
+  </button>
+</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {mediumPriority.length > 0 ? (
+            <div className="mt-8">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[#789089]">
+                Follow up
+              </p>
+
+              <div className="space-y-3">
+                {mediumPriority.map((customer) => (
+                  <div
+                    key={customer.id}
+                    className="rounded-[24px] border border-[#dfe6df] bg-white p-5 shadow-[0_8px_24px_rgba(36,73,63,0.05)]"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-lg font-bold text-[#173b35]">
+                          {formatCustomerName(
+                            customer.customerName,
+                          )}
+                        </p>
+
+                        <p className="mt-1 text-sm font-semibold text-[#174f45]">
+                          ₹
+                          {customer.balance.toLocaleString(
+                            "en-IN",
+                          )}{" "}
+                          outstanding
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-[#eef3ed] px-3 py-1 text-xs font-bold text-[#59716a]">
+                        FOLLOW UP
+                      </span>
+                    </div>
+
+                    <p className="mt-4 text-sm leading-6 text-[#59716a]">
+                     {customer.followUp.reason}
+                    </p>
+
+                    <div className="mt-4 flex gap-2">
+                      {customer.phoneNumbers.length > 0 ||
+customer.phone ? (
+  customer.followUp.recommendedAction === "call" ? (
+    <a
+      href={`tel:${customer.phoneNumbers[0] || customer.phone}`}
+      onClick={() =>
+        void logContactEvent(customer.id, "call")
+      }
+      className="flex-1 rounded-2xl bg-[#174f45] px-4 py-3 text-center text-sm font-bold text-white transition hover:bg-[#123f38]"
+    >
+      Call customer
+    </a>
+  ) : (
+    <a
+      href={`https://wa.me/${(
+        customer.phoneNumbers[0] ||
+        customer.phone ||
+        ""
+      )
+        .replace(/\D/g, "")
+        .replace(/^0/, "91")}?text=${encodeURIComponent(
+        `Hi ${formatCustomerName(customer.customerName)},\n\nThis is a quick reminder that ₹${customer.balance.toLocaleString(
+          "en-IN",
+        )} is currently outstanding.\n\nPlease let me know when you expect to make the payment. Thank you.`,
+      )}`}
+      onClick={() =>
+        void logContactEvent(customer.id, "whatsapp")
+      }
+      target="_blank"
+      rel="noreferrer"
+      className="flex-1 rounded-2xl bg-[#174f45] px-4 py-3 text-center text-sm font-bold text-white transition hover:bg-[#123f38]"
+    >
+      WhatsApp
+    </a>
+  )
+) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void loadCustomer(customer.id)
+                          }
+                          className="flex-1 rounded-2xl border border-[#dfe6df] bg-white px-4 py-3 text-sm font-bold text-[#31564d]"
+                        >
+                          Add phone number
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void loadCustomer(customer.id)
+                        }
+                        className="rounded-2xl border border-[#dfe6df] bg-white px-4 py-3 text-sm font-bold text-[#59716a]"
+                      >
+                        View
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {upcoming.length > 0 ? (
+            <div className="mt-8">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[#789089]">
+                Upcoming promises
+              </p>
+
+              <div className="space-y-3">
+                {upcoming.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() =>
+                      void loadCustomer(customer.id)
+                    }
+                    className="w-full rounded-[24px] border border-[#dfe6df] bg-white p-5 text-left shadow-[0_8px_24px_rgba(36,73,63,0.04)] transition hover:border-[#b8cec3]"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-lg font-bold text-[#173b35]">
+                          {formatCustomerName(
+                            customer.customerName,
+                          )}
+                        </p>
+
+                        <p className="mt-1 text-sm font-semibold text-[#174f45]">
+                          ₹
+                          {customer.balance.toLocaleString(
+                            "en-IN",
+                          )}{" "}
+                          outstanding
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-[#f4f1e9] px-3 py-1 text-xs font-bold text-[#8a744e]">
+                        WAIT
+                      </span>
+                    </div>
+
+                    <p className="mt-3 text-sm text-[#59716a]">
+                      Payment promise by{" "}
+                      {new Date(
+                        customer.promiseDate!,
+                      ).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                      .
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {attentionCustomers.length === 0 &&
+          upcoming.length === 0 ? (
+            <div className="mt-8 rounded-[26px] border border-[#dfe6df] bg-white p-6 text-center">
+              <p className="font-bold text-[#31564d]">
+                Nothing needs your attention today.
+              </p>
+
+              <p className="mt-2 text-sm leading-6 text-[#789089]">
+                Lenden will keep your customer memory updated
+                as new payments and promises are recorded.
+              </p>
+            </div>
+          ) : null}
+        </>
+      );
+    })()}
+  </section>
 
 
 ) : screen === "review" ? (
@@ -1761,14 +2172,24 @@ href={`tel:${getPrimaryPhone()}`}
               )}
 
                {!isWorking && (
-                <button
-                  type="button"
-                  onClick={() => void loadCustomers()}
-                  className="mt-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-[#3c6b5e] transition hover:bg-[#e9efe8]"
-                >
-                  View Business Memory
-                </button>
-              )}
+  <>
+    <button
+      type="button"
+      onClick={() => void loadCustomers()}
+      className="mt-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-[#3c6b5e] transition hover:bg-[#e9efe8]"
+    >
+      View Business Memory
+    </button>
+
+    <button
+      type="button"
+      onClick={() => void loadToday()}
+      className="mt-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-[#3c6b5e] transition hover:bg-[#e9efe8]"
+    >
+      Today&apos;s recovery
+    </button>
+  </>
+)}
 
             </section>
 

@@ -327,20 +327,33 @@ if (promise_date && !promiseDate) {
   throw new Error("Invalid promise date.");
 }
       /*
-       * Find the customer case-insensitively.
-       *
-       * Example:
-       * "Ramesh" and "ramesh" → same customer.
-       */
-      const existingCustomers = await tx
-        .select()
-        .from(customersTable)
-        .where(
-          sql`lower(${customersTable.customerName}) = lower(${customer_name})`,
-        )
-        .limit(1);
+ * Resolve the customer using the strongest available identifier.
+ *
+ * Priority:
+ * 1. Phone number — reliable even when the name is transliterated
+ *    differently (e.g. "शर्मा जी" vs "Sharma").
+ * 2. Case-insensitive customer name.
+ */
+/*
+ * Find the customer by name.
+ *
+ * Customer names are intentionally kept distinct.
+ * For example:
+ * "Sharma", "Sharma ji", "Sharma 1", and "Sharma 2"
+ * are different customers.
+ *
+ * Phone numbers must NOT be used to merge customers because
+ * different customer names may legitimately share a phone number.
+ */
+const existingCustomers = await tx
+  .select()
+  .from(customersTable)
+  .where(
+    sql`lower(${customersTable.customerName}) = lower(${customer_name})`,
+  )
+  .limit(1);
 
-      let customer = existingCustomers[0];
+let customer = existingCustomers[0];
       if (customer && phone) {
   const [updatedCustomer] = await tx
     .update(customersTable)
@@ -616,13 +629,100 @@ for (const row of phoneRows) {
   phonesByCustomer.set(row.customerId, existing);
 }
 
-        return res.json(
-      customers.map((customer) => ({
-        ...customer,
-        balance: Number(customer.balance ?? "0"),
-        phoneNumbers: phonesByCustomer.get(customer.id) ?? [],
-      })),
-    );
+       return res.json(
+  customers.map((customer) => {
+    const balance = Number(customer.balance ?? "0");
+    const phoneNumbers =
+      phonesByCustomer.get(customer.id) ?? [];
+
+    let priority: "high" | "medium" | "low" = "low";
+    let recommendedAction:
+      | "call"
+      | "whatsapp"
+      | "none" = "none";
+
+    let reason = "No follow-up needed right now.";
+
+    if (balance > 0) {
+      if (customer.promiseDate) {
+        const promiseDate = new Date(customer.promiseDate);
+        const today = new Date();
+
+        const isSameDay =
+          promiseDate.getFullYear() === today.getFullYear() &&
+          promiseDate.getMonth() === today.getMonth() &&
+          promiseDate.getDate() === today.getDate();
+
+        const isOverdue =
+          promiseDate < today && !isSameDay;
+
+        if (isOverdue) {
+          priority = "high";
+          recommendedAction =
+            phoneNumbers.length > 0 || customer.phone
+              ? "call"
+              : "none";
+
+          reason =
+            "Payment promise was missed and the balance is still outstanding.";
+        } else if (isSameDay) {
+          priority = "high";
+          recommendedAction =
+            phoneNumbers.length > 0 || customer.phone
+              ? "call"
+              : "none";
+
+          reason =
+            "Payment promise is due today and the balance is still outstanding.";
+        } else {
+          priority = "low";
+          recommendedAction = "none";
+
+          reason =
+            "Payment promise is still upcoming.";
+        }
+      } else if (balance >= 50000) {
+        priority = "high";
+        recommendedAction =
+          phoneNumbers.length > 0 || customer.phone
+            ? "call"
+            : "none";
+
+        reason =
+          "High outstanding amount needs attention.";
+      } else if (balance >= 20000) {
+        priority = "medium";
+        recommendedAction =
+          phoneNumbers.length > 0 || customer.phone
+            ? "whatsapp"
+            : "none";
+
+        reason =
+          "Outstanding balance needs follow-up.";
+      } else {
+        priority = "low";
+        recommendedAction =
+          phoneNumbers.length > 0 || customer.phone
+            ? "whatsapp"
+            : "none";
+
+        reason =
+          "Smaller outstanding balance can be followed up when convenient.";
+      }
+    }
+
+    return {
+      ...customer,
+      balance,
+      phoneNumbers,
+      followUp: {
+        priority,
+        recommendedAction,
+        reason,
+      },
+    };
+  }),
+);
     } catch (error) {
     req.log.error(
       { err: error },
