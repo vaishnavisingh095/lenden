@@ -12,7 +12,7 @@ import { z } from "zod";
 
 const router: IRouter = Router();
 
-const parsePromiseDate = (
+export const parsePromiseDate = (
   value: string | null | undefined,
 ): Date | null => {
   if (!value?.trim()) return null;
@@ -257,7 +257,7 @@ const parsePromiseDate = (
 };
 
 
-const saveCustomerNoteSchema = z.object({
+export const saveCustomerNoteSchema = z.object({
   customer_name: z.string().trim().min(1, "Customer name is required"),
 
   phone: z.string().trim().optional().nullable(),
