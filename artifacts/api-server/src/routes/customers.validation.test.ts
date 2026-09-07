@@ -1,41 +1,66 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../app";
+import { newEventId } from "../test/helpers";
 
 /**
- * CHARACTERIZATION TESTS.
+ * REGRESSION TESTS (Phase 1 — see decisions.md #5, #6).
  *
- * These document current input-handling behavior of POST /customers/notes
- * that the audit flagged as risky. No validation logic has been changed —
- * these tests only record what the endpoint does today.
+ * These previously documented confirmed-broken behavior (a null amount_type
+ * silently defaulting to "outstanding"; amount: 0 being accepted). Both are
+ * now fixed at the validation layer in saveCustomerNoteSchema. These tests
+ * assert the corrected behavior and must not regress.
  */
-describe("POST /api/customers/notes — validation edge cases (characterization)", () => {
-  it("CURRENTLY treats a null amount_type as an outstanding (debt) transaction (BUG — see audit finding A7: an ambiguous extraction result silently becomes a recorded debt instead of being rejected)", async () => {
+describe("POST /api/customers/notes — validation edge cases", () => {
+  it("rejects a null amount_type instead of silently treating it as outstanding", async () => {
     const res = await request(app).post("/api/customers/notes").send({
       customer_name: "Null Amount Type Test",
       amount: 500,
       amount_type: null,
     });
 
-    expect(res.status).toBe(201);
-    expect(res.body.transaction).not.toBeNull();
-    expect(res.body.transaction.type).toBe("purchase");
-    expect(Number(res.body.transaction.amount)).toBeCloseTo(500, 2);
-    expect(res.body.balance).toBeCloseTo(500, 2);
+    expect(res.status).toBe(400);
   });
 
-  it("CURRENTLY accepts amount: 0 for a received payment and creates a no-op transaction row (BUG — see audit finding A11)", async () => {
+  it("rejects a missing amount_type", async () => {
     const res = await request(app).post("/api/customers/notes").send({
-      customer_name: "Zero Amount Test",
+      customer_name: "Missing Amount Type Test",
+      amount: 500,
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects amount: 0 for a received payment", async () => {
+    const res = await request(app).post("/api/customers/notes").send({
+      customer_name: "Zero Amount Received Test",
       amount: 0,
       amount_type: "received",
     });
 
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects amount: 0 for an outstanding transaction", async () => {
+    const res = await request(app).post("/api/customers/notes").send({
+      customer_name: "Zero Amount Outstanding Test",
+      amount: 0,
+      amount_type: "outstanding",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("still allows amount: null for a promised event (not a zero — an intentionally unstated amount)", async () => {
+    const res = await request(app).post("/api/customers/notes").send({
+      client_event_id: newEventId(),
+      customer_name: "Amount-less Promise Test",
+      amount: null,
+      amount_type: "promised",
+      promise_date: "2026-12-25",
+    });
+
     expect(res.status).toBe(201);
-    expect(res.body.transaction).not.toBeNull();
-    expect(res.body.transaction.type).toBe("payment");
-    expect(Number(res.body.transaction.amount)).toBeCloseTo(0, 2);
-    expect(res.body.balance).toBeCloseTo(0, 2);
   });
 
   it("still rejects a negative amount (confirms this guard remains intact)", async () => {

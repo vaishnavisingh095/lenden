@@ -4,3 +4,4 @@ export * from "./transactions";
 export * from "./promiseHistory";
 export * from "./contactEvents";
 export * from "./customerPhones";
+export * from "./idempotencyClaims";

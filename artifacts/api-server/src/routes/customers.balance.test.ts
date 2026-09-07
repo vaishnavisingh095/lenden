@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../app";
+import { newEventId } from "../test/helpers";
 
 /**
  * INVARIANT / REGRESSION TEST.
@@ -15,6 +16,7 @@ describe("Balance invariant", () => {
     const customerName = "Balance Invariant Test";
 
     const outstanding1 = await request(app).post("/api/customers/notes").send({
+      client_event_id: newEventId(),
       customer_name: customerName,
       amount: 2000,
       amount_type: "outstanding",
@@ -23,6 +25,7 @@ describe("Balance invariant", () => {
     const customerId = outstanding1.body.customer.id;
 
     const received1 = await request(app).post("/api/customers/notes").send({
+      client_event_id: newEventId(),
       customer_name: customerName,
       amount: 500,
       amount_type: "received",
@@ -30,6 +33,7 @@ describe("Balance invariant", () => {
     expect(received1.status).toBe(201);
 
     const outstanding2 = await request(app).post("/api/customers/notes").send({
+      client_event_id: newEventId(),
       customer_name: customerName,
       amount: 1500,
       amount_type: "outstanding",
